@@ -1,8 +1,11 @@
 import traceback
+from urllib.parse import urlparse
 
-from telegram.ext import CommandHandler, MessageHandler, BaseFilter
+from telegram import MessageEntity
+from telegram.ext import CommandHandler, MessageHandler, BaseFilter, Filters
 
 from mrfox.db import Client
+from mrfox.rutracker import RuTrackerError
 
 
 class AuthFilter(BaseFilter):
@@ -24,6 +27,14 @@ def route_commands(updater):
 
     updater.dispatcher.add_handler(CommandHandler('start', start))
     updater.dispatcher.add_handler(CommandHandler('ping', ping))
+
+    url_handler = MessageHandler(
+        auth_filter & Filters.text & (
+            Filters.entity(MessageEntity.URL) | Filters.entity(MessageEntity.TEXT_LINK)
+        ),
+        url_message_handler
+    )
+    updater.dispatcher.add_handler(url_handler)
 
     updater.dispatcher.add_handler(MessageHandler(auth_filter, unknown_message))
 
@@ -56,6 +67,23 @@ def start(update, context):
 
 def ping(update, context):
     update.message.reply_text('pong')
+
+
+def url_message_handler(update, context):
+    url = update.message.text
+    parsed = urlparse(url)
+    bot = context.bot
+
+    if 'rutracker' in parsed.netloc:
+        try:
+            filename, torrent = bot.rutracker.get_torrent_file(parsed)
+            bot.torrent.add_rutracker_torrent(filename, torrent)
+            update.message.reply_text("ok")
+        except RuTrackerError as e:
+            update.message.reply_text(str(e))
+        return
+
+    update.message.reply_text("I don't know what to do with this url")
 
 
 def unknown_message(update, context):
